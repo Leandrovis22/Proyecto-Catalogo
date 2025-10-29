@@ -115,6 +115,33 @@ El CSV tiene las siguientes columnas (separadas por punto y coma ";"):
 11. Admin ve detalles completos de la orden
 12. Admin puede cambiar estado de la orden (en proceso, completada, etc.)
 
+## WhatsApp Cloud API (Meta) - integración
+
+Este proyecto integra la WhatsApp Cloud API (Meta) para enviar notificaciones al administrador cuando un cliente completa una orden.
+
+Variables de entorno necesarias:
+- `WA_CLOUD_TOKEN` — Token (Bearer) de la aplicación en Meta (WhatsApp Cloud API)
+- `WA_PHONE_NUMBER_ID` — El phone_number_id asociado al número de WhatsApp en Meta
+- `ADMIN_WHATSAPP_NUMBER` — Número del admin en formato internacional (ej: 5491112345678)
+- `NEXT_PUBLIC_SITE_URL` — URL pública del sitio (usada para construir el link a la orden)
+
+Notas:
+- La API oficial de Meta puede aplicar cargos por mensaje según región y tipo de plantilla.
+- Para enviar mensajes template/plantilla debes revisar la documentación de Meta y configurar plantillas aprobadas si vas a iniciar conversaciones desde la empresa.
+- El código incluye un rate limiter en memoria y un intento de logging en DB (`notifications_log`). Para producción es recomendable habilitar el almacenamiento de rate-limiter en DB (tabla `whatsapp_rate`) y ajustar límites.
+
+Ejemplo: cómo llamar al endpoint cuando una orden se marca como completada (frontend / backend):
+
+POST /api/orders/complete  (body JSON)
+{
+  "orderId": "order_123",
+  "customerName": "Juan Perez",
+  "customerPhone": "5491112345678"
+}
+
+El endpoint enviará un mensaje al número configurado en `ADMIN_WHATSAPP_NUMBER` con el nombre del cliente, teléfono y un link directo para ver la orden en el panel de admin.
+
+
 ## CONSIDERACIONES ESPECIALES:
 
 1. **Parsing CSV:** El CSV usa encoding ANSI y punto y coma como delimitador
