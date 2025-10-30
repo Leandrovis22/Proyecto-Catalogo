@@ -1,5 +1,15 @@
-export default function Card({ children }: { children: React.ReactNode }) {
+import { ReactNode } from 'react';
+
+interface CardProps {
+  children: ReactNode;
+  className?: string;
+  padding?: boolean;
+}
+
+export default function Card({ children, className = '', padding = true }: CardProps) {
   return (
-    <div className="p-4 border rounded shadow-md bg-white">{children}</div>
+    <div className={`bg-white rounded-lg shadow-md border border-gray-200 ${padding ? 'p-6' : ''} ${className}`}>
+      {children}
+    </div>
   );
 }

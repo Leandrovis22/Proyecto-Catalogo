@@ -1,3 +1,4 @@
+"use client";
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -51,62 +52,66 @@ export default function RegisterForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-w-md mx-auto">
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-4 max-w-md mx-auto bg-gray-50 p-8 rounded-xl shadow-lg border border-gray-200"
+    >
+      <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">Crear Cuenta</h2>
       <div>
-        <label className="block text-sm font-medium mb-2">Nombre completo</label>
+        <label className="block text-sm font-medium mb-2 text-gray-700">Nombre completo</label>
         <input
           type="text"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           required
-          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium mb-2">Email</label>
+        <label className="block text-sm font-medium mb-2 text-gray-700">Email</label>
         <input
           type="email"
           value={formData.email}
           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           required
-          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium mb-2">Teléfono</label>
+        <label className="block text-sm font-medium mb-2 text-gray-700">Teléfono</label>
         <input
           type="tel"
           value={formData.phone}
           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
           required
-          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium mb-2">Contraseña</label>
+        <label className="block text-sm font-medium mb-2 text-gray-700">Contraseña</label>
         <input
           type="password"
           value={formData.password}
           onChange={(e) => setFormData({ ...formData, password: e.target.value })}
           required
-          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium mb-2">Confirmar contraseña</label>
+        <label className="block text-sm font-medium mb-2 text-gray-700">Confirmar contraseña</label>
         <input
           type="password"
           value={formData.confirmPassword}
           onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
           required
-          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
         />
       </div>
-      {error && <p className="text-red-500 text-sm">{error}</p>}
+      {error && <p className="text-red-500 text-sm text-center">{error}</p>}
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 mt-4"
       >
         {loading ? 'Registrando...' : 'Registrarse'}
       </button>

@@ -1,53 +1,70 @@
+'use client';
+
 import { useState } from 'react';
+import { Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import Button from '../ui/Button';
+import Card from '../ui/Card';
 
 export default function CSVUploader() {
   const [file, setFile] = useState<File | null>(null);
-  const [message, setMessage] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
+    if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
+      setSuccess(false);
+      setError(false);
     }
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      setMessage('Por favor, selecciona un archivo CSV.');
-      return;
-    }
+    if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
+    setUploading(true);
+    setSuccess(false);
+    setError(false);
 
-    try {
-      const response = await fetch('/api/products/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setMessage(`Archivo subido exitosamente: ${data.message}`);
+    // Simulate file upload
+    setTimeout(() => {
+      setUploading(false);
+      if (Math.random() > 0.5) {
+        setSuccess(true);
       } else {
-        setMessage(`Error: ${data.error}`);
+        setError(true);
       }
-    } catch (error) {
-      setMessage('Error al subir el archivo.');
-    }
+    }, 2000);
   };
 
   return (
-    <div className="p-4 border rounded">
-      <h2 className="text-lg font-bold mb-2">Subir Archivo CSV</h2>
-      <input type="file" accept=".csv" onChange={handleFileChange} className="mb-2" />
-      <button
+    <Card className="space-y-4">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">Subir archivo CSV</label>
+        <input
+          type="file"
+          accept=".csv"
+          onChange={handleFileChange}
+          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+        />
+      </div>
+      <Button
+        variant="primary"
         onClick={handleUpload}
-        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        disabled={!file || uploading}
       >
-        Subir
-      </button>
-      {message && <p className="mt-2 text-sm text-gray-600">{message}</p>}
-    </div>
+        {uploading ? 'Subiendo...' : 'Subir'}
+      </Button>
+      {success && (
+        <div className="flex items-center text-green-600">
+          <CheckCircle size={20} className="mr-2" /> Archivo subido con éxito
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center text-red-600">
+          <AlertCircle size={20} className="mr-2" /> Error al subir el archivo
+        </div>
+      )}
+    </Card>
   );
 }

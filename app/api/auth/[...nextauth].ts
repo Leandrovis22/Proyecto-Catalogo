@@ -7,4 +7,10 @@ const db = globalThis.DB ? getDb(globalThis.DB) : null;
 
 const handler = NextAuth(getAuthOptions(db));
 
-export { handler as GET, handler as POST };
+export const GET = async (req: Request) => {
+  return handler(req);
+};
+
+export const POST = async (req: Request) => {
+  return handler(req);
+};

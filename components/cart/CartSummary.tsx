@@ -1,24 +1,47 @@
-export default function CartSummary({ items }: { items: Array<{ id: number; name: string; price: number; quantity: number; imageUrl: string }> }) {
-  const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+'use client';
+
+import Button from '../ui/Button';
+import Card from '../ui/Card';
+
+interface CartSummaryProps {
+  items: any[];
+  onComplete: () => void;
+  loading: boolean;
+}
+
+export default function CartSummary({ items, onComplete, loading }: CartSummaryProps) {
+  const handleComplete = () => {
+    onComplete();
+  };
+
+  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const shipping = 0; // Calcular según lógica de negocio
+  const total = subtotal + shipping;
 
   return (
-    <div className="p-4 border rounded">
-      <h2 className="text-lg font-bold mb-4">Resumen del Carrito</h2>
-      <ul className="space-y-4">
-        {items.map((item) => (
-          <li key={item.id} className="flex items-center gap-4">
-            <img src={item.imageUrl} alt={item.name} className="w-16 h-16 object-cover rounded" />
-            <div className="flex-1">
-              <h3 className="font-semibold text-lg">{item.name}</h3>
-              <p className="text-sm text-gray-600">Cantidad: {item.quantity}</p>
-            </div>
-            <p className="font-bold">${(item.price * item.quantity).toFixed(2)}</p>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-4 text-right">
-        <h3 className="text-xl font-bold">Total: ${total.toFixed(2)}</h3>
+    <Card>
+      <div className="space-y-4">
+        <div className="flex justify-between">
+          <span className="text-sm font-medium text-gray-700">Subtotal</span>
+          <span className="text-sm font-medium text-gray-900">${subtotal.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-sm font-medium text-gray-700">Envío</span>
+          <span className="text-sm font-medium text-gray-900">${shipping.toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between border-t pt-4">
+          <span className="text-lg font-semibold text-gray-900">Total</span>
+          <span className="text-lg font-semibold text-gray-900">${total.toFixed(2)}</span>
+        </div>
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={handleComplete}
+          disabled={loading || items.length === 0}
+        >
+          {loading ? 'Procesando...' : 'Completar compra'}
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

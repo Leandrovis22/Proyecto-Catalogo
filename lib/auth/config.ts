@@ -1,11 +1,11 @@
-import { NextAuthOptions } from 'next-auth';
+// import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
-export function getAuthOptions(db: any): NextAuthOptions {
+export function getAuthOptions(db: any): any {
   return {
     providers: [
       CredentialsProvider({
@@ -19,13 +19,13 @@ export function getAuthOptions(db: any): NextAuthOptions {
             throw new Error('Email y contraseña requeridos');
           }
 
-          const user = await db.select().from(users).where(eq(users.email, credentials.email)).get();
+          const user = await db.select().from(users).where(eq(users.email, credentials.email as string)).get();
 
           if (!user) {
             throw new Error('Usuario no encontrado');
           }
 
-          const isValidPassword = await bcrypt.compare(credentials.password, user.password);
+          const isValidPassword = await bcrypt.compare(String(credentials.password), String((user as any).password));
 
           if (!isValidPassword) {
             throw new Error('Contraseña incorrecta');
@@ -41,14 +41,14 @@ export function getAuthOptions(db: any): NextAuthOptions {
       }),
     ],
     callbacks: {
-      async jwt({ token, user }) {
+  async jwt({ token, user }: { token: any; user: any }) {
         if (user) {
           token.id = user.id;
           token.role = (user as any).role;
         }
         return token;
       },
-      async session({ session, token }) {
+  async session({ session, token }: { session: any; token: any }) {
         if (session.user) {
           (session.user as any).id = token.id;
           (session.user as any).role = token.role;
