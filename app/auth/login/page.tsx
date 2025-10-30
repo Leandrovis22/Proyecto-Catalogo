@@ -1,0 +1,12 @@
+import LoginForm from '@/components/auth/LoginForm';
+
+export default function LoginPage() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-100">
+      <div className="p-6 bg-white shadow rounded-lg">
+        <h1 className="text-2xl font-bold mb-4">Iniciar Sesión</h1>
+        <LoginForm />
+      </div>
+    </div>
+  );
+}
