@@ -39,19 +39,20 @@ Necesito crear una aplicación web de catálogo de productos con carrito de comp
 ## STACK TECNOLÓGICO:
 
 - **Framework:** Next.js 15 con App Router (NO Pages Router)
-- **Hosting:** Cloudflare Pages
+- **Hosting:** Cloudflare Pages usando @opennextjs/cloudflare
 - **Backend:** API Routes de Next.js para todas las operaciones
 - **Base de datos:** Cloudflare D1 (para usuarios, carritos, órdenes, productos)
 - **Autenticación:** NextAuth.js con JWT
 - **Imágenes:** Google Drive API
 - **CSV Parsing:** Papa Parse para leer el archivo TiendaNube (encoding ANSI)
 - **Estilos:** Tailwind CSS
-- **WhatsApp:** Twilio WhatsApp Business API o alternativa (Baileys)
+- **WhatsApp:** WhatsApp Business API Cloud (Meta)
 
 ## REQUERIMIENTOS TÉCNICOS:
 
 - Usar Server Components y Client Components apropiadamente
 - Implementar SSR donde sea necesario para SEO y performance
+- Usar @opennextjs/cloudflare como adaptador para el build y deploy en Cloudflare Pages
 - API Routes para:
   - Autenticación (register, login, logout)
   - CRUD de carrito
@@ -115,9 +116,10 @@ El CSV tiene las siguientes columnas (separadas por punto y coma ";"):
 11. Admin ve detalles completos de la orden
 12. Admin puede cambiar estado de la orden (en proceso, completada, etc.)
 
-## WhatsApp Cloud API (Meta) - integración
 
-Este proyecto integra la WhatsApp Cloud API (Meta) para enviar notificaciones al administrador cuando un cliente completa una orden.
+## WhatsApp Business API Cloud (Meta) - integración
+
+Este proyecto integra la WhatsApp Business API Cloud (Meta) para enviar notificaciones al administrador cuando un cliente completa una orden.
 
 Variables de entorno necesarias:
 - `WA_CLOUD_TOKEN` — Token (Bearer) de la aplicación en Meta (WhatsApp Cloud API)
@@ -125,9 +127,10 @@ Variables de entorno necesarias:
 - `ADMIN_WHATSAPP_NUMBER` — Número del admin en formato internacional (ej: 5491112345678)
 - `NEXT_PUBLIC_SITE_URL` — URL pública del sitio (usada para construir el link a la orden)
 
+
 Notas:
 - La API oficial de Meta puede aplicar cargos por mensaje según región y tipo de plantilla.
-- Para enviar mensajes template/plantilla debes revisar la documentación de Meta y configurar plantillas aprobadas si vas a iniciar conversaciones desde la empresa.
+- Para enviar mensajes template/plantilla debes revisar la documentación oficial de Meta y configurar plantillas aprobadas si vas a iniciar conversaciones desde la empresa.
 - El código incluye un rate limiter en memoria y un intento de logging en DB (`notifications_log`). Para producción es recomendable habilitar el almacenamiento de rate-limiter en DB (tabla `whatsapp_rate`) y ajustar límites.
 
 Ejemplo: cómo llamar al endpoint cuando una orden se marca como completada (frontend / backend):

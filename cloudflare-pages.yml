@@ -1,0 +1,3 @@
+// Configuración base para Cloudflare Pages
+// .dev.vars y .prod.vars para variables de entorno
+// cloudflare-pages.yml para configuración de build/deploy
