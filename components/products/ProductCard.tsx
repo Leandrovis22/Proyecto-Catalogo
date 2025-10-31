@@ -1,10 +1,6 @@
 import Image from "next/image";
 
-export default function ProductCard({ product, onAddToCart, isAuthenticated }: {
-  product: any;
-  onAddToCart: (id: number) => void;
-  isAuthenticated: boolean;
-}) {
+export default function ProductCard({ product }: { product: any }) {
   return (
     <div className="border rounded shadow p-4 flex flex-col">
       <Image
@@ -24,13 +20,6 @@ export default function ProductCard({ product, onAddToCart, isAuthenticated }: {
       </div>
       <button
         className="bg-blue-600 text-white py-1 px-4 rounded mt-auto disabled:opacity-50"
-        onClick={() => {
-          if (isAuthenticated) {
-            onAddToCart(product.id);
-          } else {
-            window.location.href = "/login";
-          }
-        }}
         disabled={product.stock <= 0}
       >
         {product.stock > 0 ? "Agregar al carrito" : "Sin stock"}
