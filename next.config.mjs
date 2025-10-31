@@ -5,7 +5,8 @@ const require = createRequire(import.meta.url);
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: [], // Agrega dominios si usas imágenes externas
+    domains: [  'drive.google.com',
+    ], // Agrega dominios si usas imágenes externas
   },
 };
 
