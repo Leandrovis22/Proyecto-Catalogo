@@ -10,18 +10,24 @@ Aplicación de catálogo de productos con carrito de compras que:
 
 ---
 
-## 🏗️ STACK TECNOLÓGICO
+## 🗂️ STACK TECNOLÓGICO
 
 ```
+Next:          Next.js 15.5.2
 Frontend:      Next.js 15 (App Router) + React 19 + Tailwind CSS
 Backend:       Next.js API Routes (Edge Runtime)
-Base de datos: Cloudflare D1 (SQLite)
-ORM:           Drizzle ORM
+Base de datos: Cloudflare D1 (SQLite en la nube, NO local)
+ORM:           Drizzle ORM (driver d1 - drizzle-orm/d1)
 Autenticación: NextAuth.js v5 (JWT)
 Hosting:       Cloudflare Pages (con OpenNext adapter)
 Imágenes:      Google Drive API (caché en DB)
-Emails:        Nodemailer (SMTP)
+Emails:        Nodemailer (SMTP) o Resend
 ```
+
+⚠️ **IMPORTANTE:** 
+- **NO usar** `sqlite3` ni `better-sqlite3` (son para DBs locales)
+- **SÍ usar** `drizzle-orm/d1` (driver para Cloudflare D1 remoto)
+- Todas las API routes deben tener `export const runtime = 'edge'`
 
 ---
 
@@ -43,7 +49,7 @@ proyecto-catalogo/
 │   │   │   └── [orderId]/        # Detalle de orden
 │   │   └── products/             # Gestión de productos
 │   │       └── upload/           # Importar CSV
-│   └── api/                      # API Routes
+│   └── api/                      # API Routes (Edge Runtime)
 │       ├── auth/                 # Endpoints de autenticación
 │       ├── products/             # CRUD productos
 │       ├── cart/                 # Operaciones del carrito
@@ -178,7 +184,7 @@ Un mismo producto puede tener diferentes combinaciones:
 ### 5. **NOTIFICACIONES POR EMAIL**
 
 **Configuración SMTP:**
-- Usa Gmail, Outlook, SendGrid, etc.
+- Usa Gmail, Outlook, SendGrid, Resend, etc.
 - Variables de entorno: SMTP_HOST, SMTP_USER, SMTP_PASSWORD
 
 **Emails que se envían:**
@@ -226,12 +232,27 @@ session: Pasar role a session
 
 ### 8. **CLOUDFLARE PAGES + D1**
 
-**D1 = SQLite en la nube de Cloudflare**
+**D1 = SQLite en la nube de Cloudflare (NO es local)**
 
 **Drizzle ORM:**
 - Define schemas en TypeScript
 - Genera migraciones SQL
 - Type-safe queries
+- **Usa driver `drizzle-orm/d1` para Cloudflare D1**
+
+**Acceso a DB en Edge Runtime:**
+```typescript
+import { drizzle } from 'drizzle-orm/d1';
+import { getRequestContext } from '@cloudflare/next-on-pages';
+
+export const runtime = 'edge';
+
+export async function GET() {
+  const { env } = getRequestContext();
+  const db = drizzle(env.DB);
+  // queries...
+}
+```
 
 **OpenNext:**
 - Adapter que convierte Next.js → Cloudflare Workers
@@ -239,12 +260,14 @@ session: Pasar role a session
 
 **Comandos importantes:**
 ```bash
-wrangler d1 create catalogo-db          # Crear DB
-npm run db:generate                      # Generar migraciones
-wrangler d1 migrations apply catalogo-db # Aplicar migraciones
-npm run pages:build                      # Build con OpenNext
-npm run pages:deploy                     # Deploy a Cloudflare
+wrangler d1 create catalogo-db               # Crear DB en Cloudflare
+npm run db:generate                          # Generar migraciones
+wrangler d1 migrations apply catalogo-db --remote  # Aplicar a producción
+npm run pages:build                          # Build con OpenNext
+npm run pages:deploy                         # Deploy a Cloudflare
 ```
+
+⚠️ **CRÍTICO:** Usa `--remote` para aplicar migraciones directamente a Cloudflare D1 en producción.
 
 ---
 
@@ -252,48 +275,192 @@ npm run pages:deploy                     # Deploy a Cloudflare
 
 ### **FASE 1: Setup Inicial** (30 min)
 1. ✅ Crear proyecto con `create-next-app`
-2. ✅ Instalar dependencias
+2. ✅ Instalar dependencias:
+```bash
+npm install drizzle-orm drizzle-kit
+npm install @cloudflare/next-on-pages
+npm install next-auth@beta bcryptjs
+npm install papaparse nodemailer
+npm install @types/papaparse @types/nodemailer --save-dev
+```
 3. ✅ Configurar archivos: `next.config.mjs`, `wrangler.toml`, `drizzle.config.ts`
 4. ✅ Crear estructura de carpetas
 
-### **FASE 2: Base de Datos** (1 hora)
-1. ✅ Definir schemas en `lib/db/schema.ts`
-2. ✅ Crear cliente Drizzle en `lib/db/index.ts`
-3. ✅ Generar y aplicar migraciones
-4. ✅ Probar conexión con D1
+**wrangler.toml ejemplo:**
+```toml
+name = "catalogo-productos"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "catalogo-db"
+database_id = "tu-database-id"
+```
+
+### **FASE 2: Base de Datos** (1.5 horas)
+
+#### **2.1 Configurar Drizzle**
+1. ✅ Definir schemas en `lib/db/schema.ts` (sintaxis Drizzle ORM compatible con D1)
+
+2. ✅ Crear **`drizzle.config.ts`** (SIMPLE - solo para desarrollo):
+```typescript
+import type { Config } from 'drizzle-kit';
+
+export default {
+  schema: './lib/db/schema.ts',
+  out: './drizzle/migrations',
+  dialect: 'sqlite',
+  dbCredentials: {
+    url: 'dev.db'
+  }
+} satisfies Config;
+```
+
+#### **2.2 Setup Híbrido: SQLite (Dev) + D1 (Prod)**
+
+3. ✅ Instalar Better-SQLite3 para desarrollo:
+```bash
+npm install better-sqlite3 --save-dev
+npm install @types/better-sqlite3 --save-dev
+```
+
+4. ✅ Crear cliente DB híbrido en `lib/db/index.ts`:
+```typescript
+import { drizzle as drizzleD1 } from 'drizzle-orm/d1';
+import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
+import * as schema from './schema';
+
+let cachedDb: any = null;
+
+export function getDb(d1Instance?: any) {
+  // PRODUCCIÓN: Cloudflare D1
+  if (d1Instance) {
+    return drizzleD1(d1Instance, { schema });
+  }
+  
+  // DESARROLLO: SQLite local (caché para reutilizar conexión)
+  if (process.env.NODE_ENV === 'development') {
+    if (!cachedDb) {
+      const Database = require('better-sqlite3');
+      const sqlite = new Database('dev.db');
+      cachedDb = drizzleSqlite(sqlite, { schema });
+    }
+    return cachedDb;
+  }
+  
+  throw new Error('DB no disponible');
+}
+```
+
+#### **2.3 Crear y aplicar migraciones**
+
+5. ✅ Generar migraciones:
+```bash
+npx drizzle-kit generate
+```
+
+6. ✅ Aplicar a SQLite local (desarrollo):
+```bash
+$env:NODE_ENV="development"; npx drizzle-kit push
+```
+
+7. ✅ Aplicar a Cloudflare D1 (producción):
+```bash
+npx drizzle-kit generate
+wrangler d1 migrations apply catalogo-db --remote
+```
+
+#### **2.4 Script de seed para datos de prueba**
+
+8. ✅ Crear `scripts/seed.js`:
+```javascript
+const Database = require('better-sqlite3');
+const bcrypt = require('bcryptjs');
+
+const db = new Database('dev.db');
+
+const hashedPassword = bcrypt.hashSync('admin123', 10);
+
+db.prepare(`
+  INSERT INTO users (name, email, phone, password, role, created_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+`).run('Admin', 'admin@example.com', '123456789', hashedPassword, 'admin', Date.now());
+
+console.log('✅ Usuario admin creado: admin@example.com / admin123');
+db.close();
+```
+
+9. ✅ Ejecutar seed:
+```bash
+node scripts/seed.js
+```
+
+10. ✅ Probar conexión con API route de prueba
+
+⚠️ **IMPORTANTE:** 
+- Para desarrollo: Usa `better-sqlite3` + `dev.db` local
+- Para producción: Usa `drizzle-orm/d1` + Cloudflare D1
+- NO uses `runtime = 'edge'` en desarrollo con Better-SQLite3
 
 ### **FASE 3: Autenticación** (1.5 horas)
 1. ✅ Configurar NextAuth (`lib/auth/config.ts`)
 2. ✅ API route: `app/api/auth/[...nextauth]/route.ts`
+   - **Runtime condicional:** `export const runtime = process.env.NODE_ENV === 'production' ? 'edge' : 'nodejs';`
 3. ✅ API route: `app/api/auth/register/route.ts`
-4. ✅ Componentes: LoginForm, RegisterForm
-5. ✅ Páginas: `/login`, `/register`
-6. ✅ SessionProvider en layout
+   - **Runtime condicional:** `export const runtime = process.env.NODE_ENV === 'production' ? 'edge' : 'nodejs';`
+4. ✅ Patrón para acceso a DB en API routes:
+```typescript
+export async function POST(request: Request) {
+  let db;
+  
+  if (process.env.NODE_ENV === 'production') {
+    const { getRequestContext } = await import('@cloudflare/next-on-pages');
+    const { env } = getRequestContext();
+    db = getDb(env.DB);
+  } else {
+    db = getDb(); // SQLite local
+  }
+  
+  // ... tu lógica
+}
+```
+5. ✅ Componentes: LoginForm, RegisterForm
+6. ✅ Páginas: `/login`, `/register`
+7. ✅ SessionProvider en layout
 
 ### **FASE 4: Productos** (2 horas)
 1. ✅ Servicio CSV parser (`lib/services/csv-parser.ts`)
 2. ✅ API route: `app/api/products/route.ts` (GET)
+   - **Runtime condicional:** `export const runtime = process.env.NODE_ENV === 'production' ? 'edge' : 'nodejs';`
+   - Usar patrón de acceso a DB híbrido
 3. ✅ API route: `app/api/products/upload/route.ts` (POST)
+   - **Runtime condicional:** `export const runtime = process.env.NODE_ENV === 'production' ? 'edge' : 'nodejs';`
+   - Usar patrón de acceso a DB híbrido
 4. ✅ Componentes: ProductCard, ProductGrid, ProductFilters
 5. ✅ Página: `/products` (catálogo)
 6. ✅ Página: `/products/[slug]` (detalle)
 
 ### **FASE 5: Carrito** (2 horas)
 1. ✅ API route: `app/api/cart/route.ts` (GET, POST, DELETE)
+   - **Incluir:** `export const runtime = 'edge'`
 2. ✅ Componentes: CartItem, CartSummary, CartButton
 3. ✅ Página: `/cart`
 
 ### **FASE 6: Órdenes y Emails** (2 horas)
 1. ✅ Servicio Email (`lib/services/email.ts`)
 2. ✅ API route: `app/api/cart/complete/route.ts`
+   - **Incluir:** `export const runtime = 'edge'`
 3. ✅ API route: `app/api/orders/route.ts` (admin)
+   - **Incluir:** `export const runtime = 'edge'`
 4. ✅ API route: `app/api/orders/[orderId]/route.ts`
+   - **Incluir:** `export const runtime = 'edge'`
 5. ✅ Componentes: OrderCard, OrderDetail, StatusSelect
 6. ✅ Páginas admin: `/admin/orders`, `/admin/orders/[id]`
 
 ### **FASE 7: Google Drive** (1 hora)
 1. ✅ Servicio Google Drive (`lib/services/google-drive.ts`)
 2. ✅ API route: `app/api/google-drive/images/route.ts`
+   - **Incluir:** `export const runtime = 'edge'`
 3. ✅ Configurar OAuth en Google Cloud
 
 ### **FASE 8: Admin Panel** (1.5 horas)
@@ -309,10 +476,10 @@ npm run pages:deploy                     # Deploy a Cloudflare
 4. ✅ Responsive design
 
 ### **FASE 10: Deploy** (1 hora)
-1. ✅ Configurar variables de entorno en Cloudflare
-2. ✅ Build con OpenNext
-3. ✅ Deploy a Cloudflare Pages
-4. ✅ Crear usuario admin inicial
+1. ✅ Configurar variables de entorno en Cloudflare Pages
+2. ✅ Build con OpenNext: `npm run pages:build`
+3. ✅ Deploy a Cloudflare Pages: `npm run pages:deploy`
+4. ✅ Crear usuario admin inicial (script o manualmente)
 5. ✅ Probar flujo completo
 
 ---
@@ -327,13 +494,13 @@ CLOUDFLARE_D1_TOKEN=xxx
 
 # NextAuth
 NEXTAUTH_URL=https://tu-dominio.com
-NEXTAUTH_SECRET=xxx (genera con: openssl rand -base64 32)
+NEXTAUTH_SECRET=xxx # Genera con: openssl rand -base64 32
 
 # Email SMTP
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=tu-email@gmail.com
-SMTP_PASSWORD=xxx (App Password de Gmail)
+SMTP_PASSWORD=xxx # App Password de Gmail
 SMTP_FROM=tu-email@gmail.com
 ADMIN_EMAIL=admin@tudominio.com
 
@@ -367,14 +534,50 @@ Crear primero estos 5 componentes reutilizables:
 
 ---
 
+## ⚠️ PUNTOS CRÍTICOS
+
+### 🚨 **NO HACER:**
+1. ❌ NO usar `sqlite3` ni `better-sqlite3` (son para DBs locales)
+2. ❌ NO usar `drizzle-orm/better-sqlite3` como driver
+3. ❌ NO aplicar migraciones localmente sin `--remote`
+4. ❌ NO olvidar `export const runtime = 'edge'` en API routes
+
+### ✅ **SÍ HACER:**
+1. ✅ Usar `drizzle-orm/d1` como driver (para Cloudflare D1)
+2. ✅ Aplicar migraciones con `wrangler d1 migrations apply --remote`
+3. ✅ Acceder a DB con `getRequestContext().env.DB` en edge runtime
+4. ✅ Incluir `export const runtime = 'edge'` en TODAS las API routes
+5. ✅ Configurar binding `DB` en `wrangler.toml`
+
+### 📌 **Ejemplo de API Route correcto:**
+```typescript
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import { drizzle } from 'drizzle-orm/d1';
+import * as schema from '@/lib/db/schema';
+
+export const runtime = 'edge'; // ← CRÍTICO
+
+export async function GET() {
+  const { env } = getRequestContext();
+  const db = drizzle(env.DB, { schema });
+  
+  const products = await db.select().from(schema.products);
+  
+  return Response.json({ products });
+}
+```
+
+---
+
 ## 🎯 FUNCIONALIDADES CORE
 
 ✅ Importar CSV de TiendaNube con variantes
 ✅ Catálogo con búsqueda y filtros
-✅ Carrito persistente en DB
+✅ Carrito persistente en DB (Cloudflare D1)
 ✅ Sistema de usuarios (cliente/admin)
 ✅ Órdenes con cambio de estado
 ✅ Notificaciones por email (admin + cliente)
 ✅ Caché de imágenes de Google Drive
 ✅ Panel admin completo
 ✅ Responsive design
+✅ Deploy en Cloudflare Pages con Edge Runtime
