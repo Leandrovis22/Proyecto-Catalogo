@@ -18,7 +18,7 @@ Frontend:      Next.js 15 (App Router) + React 19 + Tailwind CSS
 Backend:       Next.js API Routes (Edge Runtime)
 Base de datos: Cloudflare D1 (SQLite en la nube, NO local)
 ORM:           Drizzle ORM (driver d1 - drizzle-orm/d1)
-Autenticación: NextAuth.js v5 (JWT)
+Autenticación: NextAuth.js v4 (JWT)
 Hosting:       Cloudflare Pages (con OpenNext adapter)
 Imágenes:      Google Drive API (caché en DB)
 Emails:        Nodemailer (SMTP) o Resend
@@ -213,7 +213,7 @@ class EmailService {
 - Nombre de archivo en Drive = slug del producto
 - Ejemplo: `remera-basica.jpg` → producto con slug `remera-basica`
 
-### 7. **AUTENTICACIÓN (NextAuth v5)**
+### 7. **AUTENTICACIÓN (NextAuth v4)**
 
 **Conceptos:**
 - Strategy: JWT (no database sessions)
