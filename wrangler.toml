@@ -5,5 +5,12 @@ compatibility_date = "2025-10-30"
 binding = "DB"
 database_name = "catalogo-db"
 database_id = "05362644-3ef3-4d00-8a7b-9453a2966026"
-
 migrations_dir = "drizzle/migrations"
+
+[[r2_buckets]]
+bucket_name = "product-images"
+binding = "product_images"
+
+[[r2_buckets]]
+bucket_name = "product-images-preview"
+binding = "product_images_preview"

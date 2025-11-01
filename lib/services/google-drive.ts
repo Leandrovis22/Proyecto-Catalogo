@@ -55,7 +55,7 @@ export async function getProductImagesFromDrive(
           googleDriveId: file.id,
           url,
           isPrimary: true,
-          cachedAt: new Date(),
+          cachedAt: Math.floor(Date.now() / 1000),
         };
       })
       .filter(img => img.url);
