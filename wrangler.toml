@@ -1,0 +1,18 @@
+name = "catalogo-productos"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = ".vercel/output/static"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "catalogo-db"
+database_id = "c86bff1d-cd49-41d7-bbed-2501dd0e93bc"
+
+# R2 Bucket
+[[r2_buckets]]
+binding = "PRODUCT_IMAGES"
+bucket_name = "product-images"
+
+# Variables de entorno para producción
+[vars]
+NEXTAUTH_URL = "https://tu-dominio.pages.dev"
