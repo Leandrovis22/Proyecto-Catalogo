@@ -6,10 +6,10 @@ export const runtime = 'edge'; // Edge runtime para R2
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { filename: string } }
+  { params }: { params: Promise<{ filename: string }> }
 ) {
   try {
-    const { filename } = params;
+    const { filename } = await params;
 
     if (!filename) {
       return new NextResponse('Filename required', { status: 400 });

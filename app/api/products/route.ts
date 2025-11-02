@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getD1 } from '@/lib/cloudflare';
-import { getDb } from '@/lib/db';
+import { getDb } from '@/lib/cloudflare';
 import { products } from '@/lib/db/schema';
 import { like, gt, or, and } from 'drizzle-orm';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs'; // Cambiado a nodejs para SQLite
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,8 +11,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const category = searchParams.get('category');
 
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
     let query = db.select().from(products);
 

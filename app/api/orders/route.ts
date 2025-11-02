@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getD1 } from '@/lib/cloudflare';
-import { getDb } from '@/lib/db';
-import { orders, carts, cartItems } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { getDb } from '@/lib/cloudflare';
+import { orders, carts, cartItems, products } from '@/lib/db/schema';
+import { eq, and, desc } from 'drizzle-orm';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 // Obtener órdenes del usuario (o todas si es admin)
 export async function GET(request: NextRequest) {
@@ -16,8 +15,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
     let result;
     if (session.user.role === 'admin') {
@@ -49,10 +47,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
-    // Obtener carrito activo
+    // Obtener carrito activo del usuario
     const [cart] = await db
       .select()
       .from(carts)
@@ -137,8 +134,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Order ID required' }, { status: 400 });
     }
 
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
     const updateData: any = {};
 

@@ -3,30 +3,33 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
-    "build": "next build --webpack",
+    "dev": "next dev",
+    "dev:wrangler": "wrangler dev --port 3000 --live-reload",
+    "build": "next build",
     "start": "next start",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply catalogo-db --local",
     "db:migrate:prod": "wrangler d1 migrations apply catalogo-db",
-    "create-admin": "node scripts/create-admin.js",
-    "wrangler:dev": "wrangler pages dev --compatibility-date=2024-01-01 -- npm run dev"
+    "create-admin": "node scripts/create-admin.js"
   },
   "dependencies": {
     "@cloudflare/workers-types": "^4.20251014.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/nodemailer": "^7.0.3",
     "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^12.4.1",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.7",
     "googleapis": "^164.1.0",
     "lucide-react": "^0.552.0",
     "nanoid": "^5.1.6",
-    "next": "16.0.1",
+    "next": "^15.5.6",
     "next-auth": "^4.24.13",
     "nodemailer": "^7.0.10",
     "papaparse": "^5.5.3",
-    "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

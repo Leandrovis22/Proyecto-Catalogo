@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getD1 } from '@/lib/cloudflare';
-import { getDb } from '@/lib/db';
+import { getDb } from '@/lib/cloudflare';
 import { carts, cartItems, products } from '@/lib/db/schema';
 import { eq, and } from 'drizzle-orm';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 // Obtener carrito actual del usuario
 export async function GET(request: NextRequest) {
@@ -16,8 +15,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
     // Buscar carrito activo
     const [cart] = await db
@@ -71,8 +69,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
     }
 
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
     // Verificar producto y stock
     const [product] = await db
@@ -190,15 +187,11 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
     }
 
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
     // Verificar que el item pertenece al usuario
-    const [item] = await db
-      .select({
-        item: cartItems,
-        cart: carts,
-      })
+    const result = await db
+      .select()
       .from(cartItems)
       .innerJoin(carts, eq(cartItems.cartId, carts.id))
       .where(
@@ -210,9 +203,11 @@ export async function PATCH(request: NextRequest) {
       )
       .limit(1);
 
-    if (!item) {
+    if (!result || result.length === 0) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 });
     }
+
+    const item = result[0];
 
     // Si quantity es 0, eliminar
     if (quantity === 0) {
@@ -221,11 +216,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Verificar stock
-    if (item.item.productId) {
+    if (item.cart_items.productId) {
       const [product] = await db
         .select()
         .from(products)
-        .where(eq(products.id, item.item.productId))
+        .where(eq(products.id, item.cart_items.productId))
         .limit(1);
 
       if (product && product.stock < quantity) {
@@ -267,15 +262,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Item ID required' }, { status: 400 });
     }
 
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
     // Verificar que el item pertenece al usuario
-    const [item] = await db
-      .select({
-        item: cartItems,
-        cart: carts,
-      })
+    const result = await db
+      .select()
       .from(cartItems)
       .innerJoin(carts, eq(cartItems.cartId, carts.id))
       .where(
@@ -286,7 +277,7 @@ export async function DELETE(request: NextRequest) {
       )
       .limit(1);
 
-    if (!item) {
+    if (!result || result.length === 0) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 });
     }
 

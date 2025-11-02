@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getD1 } from '@/lib/cloudflare';
-import { getDb } from '@/lib/db';
+import { getDb } from '@/lib/cloudflare';
 import { products } from '@/lib/db/schema';
 import { parseTiendaNubeCSV, convertToANSI } from '@/lib/csv-parser';
 
@@ -51,8 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Conectar a DB
-    const d1 = getD1();
-    const db = getDb(d1);
+    const db = getDb();
 
     // BORRAR todos los productos existentes
     await db.delete(products);

@@ -1,10 +1,9 @@
 import type { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { compare } from 'bcryptjs';
-import { getDb } from '@/lib/db';
+import { getDb } from '@/lib/cloudflare';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { getD1 } from '@/lib/cloudflare';
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -20,8 +19,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          const d1 = getD1();
-          const db = getDb(d1);
+          const db = getDb();
 
           const [user] = await db
             .select()

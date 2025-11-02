@@ -1,12 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import { drizzle } from 'drizzle-orm/d1';
-import * as schema from './schema';
+// Re-export getDb from cloudflare helper
+export { getDb } from '../cloudflare';
 
-// Para desarrollo local con Wrangler
-export function getDb(d1Database: D1Database) {
-  return drizzle(d1Database, { schema });
-}
-
-// Tipos
-export type Database = ReturnType<typeof getDb>;
+// Export types
+export type { Database } from 'better-sqlite3';
