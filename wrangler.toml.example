@@ -6,7 +6,7 @@ pages_build_output_dir = ".vercel/output/static"
 [[d1_databases]]
 binding = "DB"
 database_name = "catalogo-db"
-database_id = "c86bff1d-cd49-41d7-bbed-2501dd0e93bc"
+database_id = "" # Completar con el ID de tu base de datos D1
 
 # R2 Bucket
 [[r2_buckets]]

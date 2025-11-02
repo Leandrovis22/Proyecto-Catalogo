@@ -38,6 +38,7 @@ yarn-error.log*
 .wrangler/
 .dev.vars
 wrangler.toml.backup
+wrangler.toml
 
 # Drizzle
 drizzle/migrations/*.sql
