@@ -20,7 +20,7 @@ Base de datos: Cloudflare D1 (SQLite en la nube, NO local)
 ORM:           Drizzle ORM (driver d1 - drizzle-orm/d1)
 Autenticación: NextAuth.js v4 (JWT)
 Hosting:       Cloudflare Pages (con OpenNext adapter)
-Imágenes:      Google Drive API (caché en DB)
+Imágenes:      Cloudflare R2 (sincronizadas desde Google Drive)
 Emails:        Nodemailer (SMTP) o Resend
 ```
 
@@ -55,18 +55,25 @@ proyecto-catalogo/
 │       ├── cart/                 # Operaciones del carrito
 │       ├── orders/               # Gestión de órdenes
 │       ├── email/                # Envío de notificaciones
-│       └── google-drive/         # Sincronización de imágenes
+│       ├── images/               # 🆕 Servir imágenes desde R2
+│       │   └── [filename]/       # GET /api/images/producto.jpg
+│       └── admin/
+│           └── sync-images/      # 🆕 Sincronizar Drive → R2
 ├── components/                   # Componentes React
 │   ├── ui/                       # Componentes base (Button, Input, etc)
 │   ├── products/                 # Componentes de productos
 │   ├── cart/                     # Componentes del carrito
 │   ├── admin/                    # Componentes del admin
+│   │   └── SyncImagesButton.tsx  # 🆕 Botón sincronizar imágenes
 │   └── layout/                   # Header, Footer, Sidebar
 ├── lib/                          # Lógica de negocio
 │   ├── db/                       # Drizzle ORM (schema, client)
 │   ├── auth/                     # Configuración NextAuth
 │   ├── services/                 # Servicios (CSV, Email, Drive)
+│   │   └── google-drive.ts       # Servicio para consultar Drive
 │   └── utils/                    # Utilidades y helpers
+├── types/                        # 🆕 TypeScript types
+│   └── cloudflare.d.ts           # Tipos para D1 y R2
 └── archivos de config            # next.config, wrangler.toml, etc
 ```
 
@@ -110,10 +117,11 @@ id, cartId, userId, status (pending/processing/completed/cancelled),
 total, emailSent, completedAt, updatedAt
 ```
 
-**7. productImages** - Caché de imágenes de Google Drive
+**7. productImages** - Metadatos de imágenes
 ```
-id, productId, googleDriveId, url, isPrimary, cachedAt
+id, productId, googleDriveId, url, isPrimary, cachedAt (INTEGER en segundos)
 ```
+⚠️ **IMPORTANTE:** `cachedAt` debe ser INTEGER (Unix timestamp en segundos)
 
 ---
 
@@ -126,6 +134,7 @@ id, productId, googleDriveId, url, isPrimary, cachedAt
 - Sistema parsea con PapaParse (encoding ANSI, delimiter `;`)
 - Agrupa productos con sus variantes
 - Inserta en DB
+- **🆕 Descarga imágenes desde Google Drive y las sube a R2**
 
 **Formato CSV:**
 ```
@@ -199,15 +208,37 @@ class EmailService {
 }
 ```
 
-### 6. **IMÁGENES CON GOOGLE DRIVE**
+### 6. **🆕 IMÁGENES CON CLOUDFLARE R2**
 
-**Problema:** No queremos hacer 1000 requests a Drive por cada usuario
+**Problema resuelto:** Evitar que cada cliente consulte directamente Google Drive
 
-**Solución:**
-1. Admin sincroniza imágenes desde Google Drive (manualmente o periódico)
-2. Sistema descarga URLs de imágenes públicas
-3. Guarda URLs en tabla `productImages`
-4. Frontend usa las URLs cacheadas
+**Solución R2:**
+1. Admin sube CSV → Backend descarga imágenes desde Google Drive
+2. Backend sube imágenes a R2 (bucket de Cloudflare)
+3. URLs en DB apuntan a `/api/images/producto.jpg`
+4. Frontend obtiene imágenes desde R2 vía tu propia API
+5. **Ventajas:**
+   - ✅ 100% gratis (10GB + 1M lecturas/mes)
+   - ✅ CDN global de Cloudflare
+   - ✅ Cache infinito
+   - ✅ Sin dependencia de Google Drive en producción
+
+**Flujo completo:**
+```
+1. Admin sube CSV
+2. Backend consulta Google Drive API (lista de imágenes)
+3. Para cada imagen:
+   a) Descarga desde Drive
+   b) Sube a R2: bucket.put('producto.jpg', buffer)
+   c) Actualiza DB: image_url = '/api/images/producto.jpg'
+4. Cliente ve producto → Next.js Image optimiza desde R2
+5. R2 sirve con cache 1 año (inmutable)
+```
+
+**Sincronización manual (opcional):**
+- Botón en admin panel: "🔄 Sincronizar Imágenes"
+- API route: `/api/admin/sync-images` (POST)
+- Re-descarga imágenes desde Drive sin resubir CSV
 
 **Mapeo:**
 - Nombre de archivo en Drive = slug del producto
@@ -230,9 +261,11 @@ jwt: Agregar role al token
 session: Pasar role a session
 ```
 
-### 8. **CLOUDFLARE PAGES + D1**
+### 8. **CLOUDFLARE PAGES + D1 + R2**
 
 **D1 = SQLite en la nube de Cloudflare (NO es local)**
+
+**R2 = Object Storage de Cloudflare (como AWS S3)**
 
 **Drizzle ORM:**
 - Define schemas en TypeScript
@@ -240,7 +273,7 @@ session: Pasar role a session
 - Type-safe queries
 - **Usa driver `drizzle-orm/d1` para Cloudflare D1**
 
-**Acceso a DB en Edge Runtime:**
+**Acceso a DB y R2 en Edge Runtime:**
 ```typescript
 import { drizzle } from 'drizzle-orm/d1';
 import { getRequestContext } from '@cloudflare/next-on-pages';
@@ -250,6 +283,7 @@ export const runtime = 'edge';
 export async function GET() {
   const { env } = getRequestContext();
   const db = drizzle(env.DB);
+  const r2 = env.PRODUCT_IMAGES;
   // queries...
 }
 ```
@@ -261,6 +295,7 @@ export async function GET() {
 **Comandos importantes:**
 ```bash
 wrangler d1 create catalogo-db               # Crear DB en Cloudflare
+wrangler r2 bucket create product-images     # 🆕 Crear bucket R2
 npm run db:generate                          # Generar migraciones
 wrangler d1 migrations apply catalogo-db --remote  # Aplicar a producción
 npm run pages:build                          # Build con OpenNext
@@ -290,17 +325,32 @@ npm install @types/papaparse @types/nodemailer --save-dev
 ```toml
 name = "catalogo-productos"
 compatibility_date = "2024-01-01"
+pages_build_output_dir = ".vercel/output/static"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "catalogo-db"
 database_id = "tu-database-id"
+
+# 🆕 NUEVO: Binding para R2
+[[r2_buckets]]
+binding = "PRODUCT_IMAGES"
+bucket_name = "product-images"
+preview_bucket_name = "product-images-preview"
 ```
 
 ### **FASE 2: Base de Datos** (1.5 horas)
 
 #### **2.1 Configurar Drizzle**
 1. ✅ Definir schemas en `lib/db/schema.ts` (sintaxis Drizzle ORM compatible con D1)
+
+⚠️ **IMPORTANTE:** En `productImages`, el campo `cachedAt` debe ser:
+```typescript
+export const productImages = sqliteTable('product_images', {
+  // ...
+  cached_at: integer('cached_at').notNull(), // ✅ INTEGER (Unix timestamp)
+});
+```
 
 2. ✅ Crear **`drizzle.config.ts`** (SIMPLE - solo para desarrollo):
 ```typescript
@@ -436,17 +486,118 @@ export async function POST(request: Request) {
 3. ✅ API route: `app/api/products/upload/route.ts` (POST)
    - **Runtime condicional:** `export const runtime = process.env.NODE_ENV === 'production' ? 'edge' : 'nodejs';`
    - Usar patrón de acceso a DB híbrido
+   - **🆕 Incluir lógica de sincronización R2**
 4. ✅ Componentes: ProductCard, ProductGrid, ProductFilters
 5. ✅ Página: `/products` (catálogo)
 6. ✅ Página: `/products/[slug]` (detalle)
 
-### **FASE 5: Carrito** (2 horas)
+### **FASE 5: 🆕 Imágenes con R2** (1 hora)
+
+#### **5.1 Crear buckets R2**
+```bash
+npx wrangler r2 bucket create product-images
+npx wrangler r2 bucket create product-images-preview
+```
+
+#### **5.2 Crear tipos TypeScript**
+1. ✅ Crear `types/cloudflare.d.ts`:
+```typescript
+declare module '@cloudflare/next-on-pages' {
+  export function getRequestContext(): {
+    env: {
+      DB: D1Database;
+      PRODUCT_IMAGES: R2Bucket;
+    };
+  };
+}
+
+interface R2Bucket {
+  get(key: string): Promise<R2ObjectBody | null>;
+  put(key: string, value: ArrayBuffer | Blob, options?: {
+    httpMetadata?: { contentType?: string }
+  }): Promise<R2Object>;
+}
+
+interface R2ObjectBody {
+  body: ReadableStream;
+  httpMetadata?: { contentType?: string };
+  etag: string;
+}
+
+export {};
+```
+
+#### **5.3 API Route para servir imágenes**
+2. ✅ Crear `app/api/images/[filename]/route.ts`:
+```typescript
+export const runtime = 'edge';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { filename: string } }
+) {
+  const { env } = getRequestContext();
+  const bucket = env.PRODUCT_IMAGES;
+  
+  const object = await bucket.get(params.filename);
+  if (!object) return new Response('Not found', { status: 404 });
+  
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': object.httpMetadata?.contentType || 'image/jpeg',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  });
+}
+```
+
+#### **5.4 Actualizar upload/route.ts**
+3. ✅ En `app/api/products/upload/route.ts`, después de insertar productos:
+```typescript
+// Obtener R2 bucket
+const r2Bucket = env.PRODUCT_IMAGES;
+
+// Para cada imagen:
+const response = await fetch(img.url); // Descargar desde Drive
+const arrayBuffer = await response.arrayBuffer();
+
+await r2Bucket.put(filename, arrayBuffer, {
+  httpMetadata: { contentType: 'image/jpeg' }
+});
+
+// Actualizar DB con URL de R2
+await db.update(products).set({ 
+  image_url: `/api/images/${filename}` 
+});
+```
+
+⚠️ **IMPORTANTE:** Usar `Math.floor(Date.now() / 1000)` para `cached_at`
+
+#### **5.5 API Route para sincronización manual (opcional)**
+4. ✅ Crear `app/api/admin/sync-images/route.ts`
+5. ✅ Crear `components/admin/SyncImagesButton.tsx`
+
+#### **5.6 Actualizar next.config.mjs**
+6. ✅ Permitir dominio propio para imágenes:
+```javascript
+images: {
+  remotePatterns: [
+    {
+      protocol: 'https',
+      hostname: '**.pages.dev',
+      pathname: '/api/images/**',
+    }
+  ]
+}
+```
+
+### **FASE 6: Carrito** (2 horas)
 1. ✅ API route: `app/api/cart/route.ts` (GET, POST, DELETE)
    - **Incluir:** `export const runtime = 'edge'`
 2. ✅ Componentes: CartItem, CartSummary, CartButton
 3. ✅ Página: `/cart`
 
-### **FASE 6: Órdenes y Emails** (2 horas)
+### **FASE 7: Órdenes y Emails** (2 horas)
 1. ✅ Servicio Email (`lib/services/email.ts`)
 2. ✅ API route: `app/api/cart/complete/route.ts`
    - **Incluir:** `export const runtime = 'edge'`
@@ -457,17 +608,12 @@ export async function POST(request: Request) {
 5. ✅ Componentes: OrderCard, OrderDetail, StatusSelect
 6. ✅ Páginas admin: `/admin/orders`, `/admin/orders/[id]`
 
-### **FASE 7: Google Drive** (1 hora)
-1. ✅ Servicio Google Drive (`lib/services/google-drive.ts`)
-2. ✅ API route: `app/api/google-drive/images/route.ts`
-   - **Incluir:** `export const runtime = 'edge'`
-3. ✅ Configurar OAuth en Google Cloud
-
 ### **FASE 8: Admin Panel** (1.5 horas)
 1. ✅ Layout admin con Sidebar
 2. ✅ Dashboard con estadísticas
 3. ✅ CSVUploader component
-4. ✅ Páginas: `/admin/dashboard`, `/admin/products/upload`
+4. ✅ 🆕 SyncImagesButton component
+5. ✅ Páginas: `/admin/dashboard`, `/admin/products/upload`
 
 ### **FASE 9: UI/UX** (1 hora)
 1. ✅ Header, Footer
@@ -504,7 +650,7 @@ SMTP_PASSWORD=xxx # App Password de Gmail
 SMTP_FROM=tu-email@gmail.com
 ADMIN_EMAIL=admin@tudominio.com
 
-# Google Drive (opcional al inicio)
+# Google Drive (solo para sincronización inicial)
 GOOGLE_CLIENT_ID=xxx
 GOOGLE_CLIENT_SECRET=xxx
 GOOGLE_REFRESH_TOKEN=xxx
@@ -537,19 +683,22 @@ Crear primero estos 5 componentes reutilizables:
 ## ⚠️ PUNTOS CRÍTICOS
 
 ### 🚨 **NO HACER:**
-1. ❌ NO usar `sqlite3` ni `better-sqlite3` (son para DBs locales)
-2. ❌ NO usar `drizzle-orm/better-sqlite3` como driver
+1. ❌ NO usar `sqlite3` ni `better-sqlite3` en producción
+2. ❌ NO usar `drizzle-orm/better-sqlite3` como driver en producción
 3. ❌ NO aplicar migraciones localmente sin `--remote`
-4. ❌ NO olvidar `export const runtime = 'edge'` en API routes
+4. ❌ NO olvidar `export const runtime = 'edge'` en API routes de producción
+5. ❌ NO usar `Date.now()` directamente para `cached_at` (usar `Math.floor(Date.now() / 1000)`)
 
 ### ✅ **SÍ HACER:**
 1. ✅ Usar `drizzle-orm/d1` como driver (para Cloudflare D1)
 2. ✅ Aplicar migraciones con `wrangler d1 migrations apply --remote`
 3. ✅ Acceder a DB con `getRequestContext().env.DB` en edge runtime
-4. ✅ Incluir `export const runtime = 'edge'` en TODAS las API routes
-5. ✅ Configurar binding `DB` en `wrangler.toml`
+4. ✅ Incluir `export const runtime = 'edge'` en TODAS las API routes de producción
+5. ✅ Configurar bindings `DB` y `PRODUCT_IMAGES` en `wrangler.toml`
+6. ✅ Usar `Math.floor(Date.now() / 1000)` para timestamps INTEGER
+7. ✅ Crear buckets R2 antes de deploy
 
-### 📌 **Ejemplo de API Route correcto:**
+### 📌 **Ejemplo de API Route correcto con R2:**
 ```typescript
 import { getRequestContext } from '@cloudflare/next-on-pages';
 import { drizzle } from 'drizzle-orm/d1';
@@ -560,6 +709,7 @@ export const runtime = 'edge'; // ← CRÍTICO
 export async function GET() {
   const { env } = getRequestContext();
   const db = drizzle(env.DB, { schema });
+  const r2 = env.PRODUCT_IMAGES; // ← Acceso a R2
   
   const products = await db.select().from(schema.products);
   
@@ -577,7 +727,7 @@ export async function GET() {
 ✅ Sistema de usuarios (cliente/admin)
 ✅ Órdenes con cambio de estado
 ✅ Notificaciones por email (admin + cliente)
-✅ Caché de imágenes de Google Drive
+✅ 🆕 Imágenes en Cloudflare R2 (sincronizadas desde Google Drive)
 ✅ Panel admin completo
 ✅ Responsive design
 ✅ Deploy en Cloudflare Pages con Edge Runtime

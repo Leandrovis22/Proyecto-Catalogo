@@ -1,12 +1,11 @@
 // app/api/products/upload/route.ts
 import { NextRequest } from 'next/server';
 import Papa from 'papaparse';
-import { getProductImagesFromDrive } from '@/lib/services/google-drive';
 import { getDb } from '@/lib/db';
 import * as schema from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
-export const runtime = process.env.NODE_ENV === 'production' ? 'edge' : 'nodejs';
+export const runtime = 'nodejs'; // Node.js para googleapis
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,28 +45,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ ${typedRows.length} filas parseadas`);
 
-    // 2. Get DB instance (híbrido)
-    let db;
-    let r2Bucket; // ✅ NUEVO: Binding R2
-    
-    if (process.env.NODE_ENV === 'production') {
-      const { getRequestContext } = await import('@cloudflare/next-on-pages');
-      const { env } = getRequestContext();
-      
-      if (!env.DB) {
-        return Response.json({ error: 'No se encontró el binding DB en Cloudflare' }, { status: 500 });
-      }
-      
-      if (!env.PRODUCT_IMAGES) {
-        return Response.json({ error: 'No se encontró el binding PRODUCT_IMAGES (R2)' }, { status: 500 });
-      }
-      
-      db = getDb(env.DB);
-      r2Bucket = env.PRODUCT_IMAGES; // ✅ NUEVO
-    } else {
-      db = getDb();
-      r2Bucket = null; // En local no usamos R2 (o usar miniflare)
-    }
+    // 2. Get DB instance
+    const db = getDb();
 
     // 3. Delete all existing data
     console.log('🗑️ Limpiando base de datos...');
@@ -182,115 +161,28 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Total insertado: ${insertedCount} productos, ${variantsCount} variantes`);
 
-    // 6. ✅ NUEVO: Sync images from Google Drive → R2
-    console.log('🖼️ Sincronizando imágenes desde Google Drive...');
+    // 6. Sincronizar imágenes llamando al endpoint Edge
+    console.log('🖼️ Sincronizando imágenes desde Google Drive → R2...');
     
-    const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-    const driveAuthConfig = {
-      clientId: process.env.GOOGLE_CLIENT_ID || '',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-      redirectUri: process.env.GOOGLE_REDIRECT_URI || '',
-      refreshToken: process.env.GOOGLE_REFRESH_TOKEN || '',
-    };
+    try {
+      const syncResponse = await fetch(`${request.nextUrl.origin}/api/admin/sync-images`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (!driveFolderId || !driveAuthConfig.clientId || !driveAuthConfig.clientSecret || 
-        !driveAuthConfig.redirectUri || !driveAuthConfig.refreshToken) {
-      console.warn('⚠️ Credenciales de Google Drive incompletas, saltando sincronización de imágenes');
-    } else {
-      try {
-        const images = await getProductImagesFromDrive(driveFolderId, driveAuthConfig);
-        console.log(`📸 ${images.length} imágenes encontradas en Google Drive`);
-
-        let imagesLinked = 0;
-        let imageErrors = 0;
-
-        for (const img of images) {
-          try {
-            // Buscar producto por slug
-            const [product] = await db
-              .select()
-              .from(schema.products)
-              .where(eq(schema.products.slug, img.slug))
-              .limit(1);
-
-            if (!product) {
-              console.warn(`⚠️ No se encontró producto con slug: ${img.slug}`);
-              imageErrors++;
-              continue;
-            }
-
-            let finalImageUrl = img.url; // Default: URL de Google Drive
-
-            // ✅ NUEVO: Si estamos en producción, descargar y subir a R2
-            if (r2Bucket) {
-              try {
-                console.log(`📥 Descargando imagen desde Drive: ${img.slug}...`);
-                
-                // Descargar imagen desde Google Drive
-                const response = await fetch(img.url);
-                if (!response.ok) {
-                  throw new Error(`HTTP ${response.status}`);
-                }
-
-                const arrayBuffer = await response.arrayBuffer();
-                const contentType = response.headers.get('content-type') || 'image/jpeg';
-                
-                // Detectar extensión
-                const ext = contentType.includes('png') ? 'png' : 
-                            contentType.includes('webp') ? 'webp' : 
-                            contentType.includes('gif') ? 'gif' : 'jpg';
-                
-                const filename = `${img.slug}.${ext}`;
-
-                // ✅ Subir a R2
-                await r2Bucket.put(filename, arrayBuffer, {
-                  httpMetadata: {
-                    contentType,
-                  },
-                });
-
-                // Actualizar URL para que apunte a nuestra API
-                finalImageUrl = `/api/images/${filename}`;
-                console.log(`✅ Imagen subida a R2: ${filename}`);
-
-              } catch (r2Error) {
-                console.error(`⚠️ Error subiendo ${img.slug} a R2:`, r2Error);
-                // Fallback: usar URL de Google Drive
-                console.log(`   ↳ Usando URL de Google Drive como fallback`);
-              }
-            }
-
-            // Insertar en productImages
-            await db.insert(schema.productImages).values({
-              product_id: product.id,
-              google_drive_id: img.googleDriveId,
-              url: finalImageUrl, // ✅ URL actualizada (R2 o Drive)
-              is_primary: true,
-              cached_at: Math.floor(Date.now() / 1000),
-            });
-
-            // Actualizar imageUrl del producto
-            await db
-              .update(schema.products)
-              .set({ image_url: finalImageUrl })
-              .where(eq(schema.products.id, product.id));
-
-            imagesLinked++;
-            console.log(`✅ Imagen vinculada: ${img.slug} → ${product.name}`);
-
-          } catch (linkError) {
-            console.error(`❌ Error vinculando imagen ${img.slug}:`, linkError);
-            imageErrors++;
-          }
-        }
-
-        console.log(`✅ Imágenes procesadas: ${imagesLinked} vinculadas, ${imageErrors} errores`);
-
-      } catch (imageError) {
-        console.error('⚠️ Error sincronizando imágenes desde Google Drive:');
-        console.error(imageError);
-        console.warn('⚠️ Continuando sin imágenes...');
+      if (!syncResponse.ok) {
+        const error = await syncResponse.json();
+        console.error('⚠️ Error sincronizando imágenes:', error);
+        console.warn('⚠️ Productos insertados pero sin imágenes');
+      } else {
+        const syncResult = await syncResponse.json();
+        console.log(`✅ Imágenes sincronizadas: ${syncResult.stats?.downloaded || 0} descargadas, ${syncResult.stats?.dbUpdated || 0} actualizadas en DB`);
       }
+    } catch (syncError) {
+      console.error('⚠️ Error llamando a sync-images:', syncError);
+      console.warn('⚠️ Productos insertados pero sin imágenes');
     }
 
     // 7. Respuesta exitosa

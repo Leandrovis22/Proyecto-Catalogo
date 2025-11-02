@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 import * as schema from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs'; // Node.js para googleapis (no soporta edge)
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,22 +14,8 @@ export async function POST(request: NextRequest) {
     //   return Response.json({ error: 'No autorizado' }, { status: 401 });
     // }
 
-    // 1. Obtener bindings de Cloudflare
-    const { getRequestContext } = await import('@cloudflare/next-on-pages');
-    const { env } = getRequestContext();
-
-    if (!env.DB || !env.PRODUCT_IMAGES) {
-      return Response.json({ 
-        error: 'Bindings de Cloudflare no configurados',
-        details: {
-          db: !!env.DB,
-          r2: !!env.PRODUCT_IMAGES,
-        }
-      }, { status: 500 });
-    }
-
-    const db = getDb(env.DB);
-    const r2Bucket = env.PRODUCT_IMAGES;
+    // 1. Obtener DB instance
+    const db = getDb();
 
     // 2. Validar configuración de Google Drive
     const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
@@ -59,43 +45,43 @@ export async function POST(request: NextRequest) {
     const images = await getProductImagesFromDrive(driveFolderId, driveAuthConfig);
     console.log(`✅ ${images.length} imágenes encontradas`);
 
-    // 4. Descargar y subir a R2
+    // 4. Subir a R2 usando endpoint edge
     let downloaded = 0;
     let errors = 0;
-    const processedImages: { slug: string; localUrl: string }[] = [];
+    const processedImages: { slug: string; localUrl: string; googleDriveId: string }[] = [];
 
     for (const img of images) {
       try {
         console.log(`📥 Procesando: ${img.slug}...`);
         
-        // Descargar desde Google Drive
-        const response = await fetch(img.url);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        const contentType = response.headers.get('content-type') || 'image/jpeg';
-
-        // Detectar extensión
-        const ext = contentType.includes('png') ? 'png' : 
-                    contentType.includes('webp') ? 'webp' : 
-                    contentType.includes('gif') ? 'gif' : 'jpg';
-        
-        const filename = `${img.slug}.${ext}`;
-
-        // Subir a R2
-        await r2Bucket.put(filename, arrayBuffer, {
-          httpMetadata: {
-            contentType,
+        // Llamar al endpoint edge para subir a R2
+        const uploadResponse = await fetch(`${request.nextUrl.origin}/api/admin/upload-to-r2`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            slug: img.slug,
+            imageUrl: img.url,
+            googleDriveId: img.googleDriveId,
+          }),
         });
 
-        const localUrl = `/api/images/${filename}`;
-        processedImages.push({ slug: img.slug, localUrl });
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json();
+          throw new Error(errorData.error || `HTTP ${uploadResponse.status}`);
+        }
+
+        const uploadResult = await uploadResponse.json();
+        
+        processedImages.push({
+          slug: img.slug,
+          localUrl: uploadResult.url,
+          googleDriveId: img.googleDriveId,
+        });
 
         downloaded++;
-        console.log(`✅ Guardado en R2: ${filename}`);
+        console.log(`✅ Imagen subida a R2: ${img.slug}`);
 
       } catch (error) {
         console.error(`❌ Error con ${img.slug}:`, error);
@@ -107,7 +93,7 @@ export async function POST(request: NextRequest) {
     console.log('💾 Actualizando URLs en base de datos...');
     let updated = 0;
 
-    for (const { slug, localUrl } of processedImages) {
+    for (const { slug, localUrl, googleDriveId } of processedImages) {
       try {
         const [product] = await db
           .select()
@@ -140,7 +126,7 @@ export async function POST(request: NextRequest) {
           } else {
             await db.insert(schema.productImages).values({
               product_id: product.id,
-              google_drive_id: slug,
+              google_drive_id: googleDriveId,
               url: localUrl,
               is_primary: true,
               cached_at: Math.floor(Date.now() / 1000),
