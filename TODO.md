@@ -18,6 +18,12 @@
 - [x] Página principal de catálogo con búsqueda y filtros
 - [x] Componente de navegación
 - [x] Sistema de providers para NextAuth
+- [x] **Refactorización de DB: SQLite (dev) + D1 (prod)**
+- [x] Migraciones aplicadas localmente
+- [x] Usuario admin creado localmente
+- [x] Downgrade a Next.js 15.5.6 y React 18.3.1 (versiones estables)
+- [x] Corrección de parámetros async en rutas dinámicas (Next.js 15)
+- [x] Todas las APIs actualizadas para usar getDb() híbrido
 
 ---
 
@@ -26,6 +32,11 @@
 ### Alta Prioridad
 
 #### 1. Páginas Frontend Faltantes
+
+- [x] **Página de Sign In** (`app/auth/signin/page.tsx`)
+  - ✅ Formulario de login
+  - ✅ Manejo de errores
+  - ✅ Redirect después de login
 
 - [ ] **Página de Carrito** (`app/cart/page.tsx`)
   - Mostrar items del carrito
@@ -38,18 +49,13 @@
   - Mostrar detalles de cada orden
   - Estados (activa, finalizada, cancelada)
 
-- [ ] **Página de Sign In** (`app/auth/signin/page.tsx`)
-  - Formulario de login
-  - Opción de registro (opcional)
-  - Manejo de errores
-
-- [ ] **Panel de Admin** (`app/admin/page.tsx`)
-  - Upload de CSV
-  - Botón de sincronización de imágenes
-  - Lista de órdenes de todos los usuarios
-  - Acciones: Finalizar, Cancelar
-  - Logs de sincronización
-  - Vista de productos sin imagen
+- [x] **Panel de Admin** (`app/admin/page.tsx`)
+  - ✅ Upload de CSV con feedback
+  - ✅ Botón de sincronización de imágenes
+  - ✅ Lista de órdenes de todos los usuarios
+  - ✅ Acciones: Finalizar, Cancelar
+  - ✅ Vista de productos sin imagen
+  - ✅ Protección de ruta (solo admin)
 
 #### 2. Funcionalidades Backend
 
@@ -104,16 +110,17 @@
 
 #### 5. Testing y Debugging
 
-- [ ] **Generar Migraciones de DB**
+- [x] **Generar Migraciones de DB**
   ```bash
   npm run db:generate
   npm run db:migrate:local
   ```
 
-- [ ] **Crear Usuario Admin**
+- [x] **Crear Usuario Admin**
   ```bash
   npm run create-admin
   ```
+  - ✅ Usuario creado: admin@example.com / admin123
 
 - [ ] **Probar Flujo Completo**
   - Upload CSV
@@ -234,12 +241,43 @@
 
 1. ✅ Generar migraciones y crear DB local
 2. ✅ Crear usuario admin
-3. ⬜ Completar página de Sign In
-4. ⬜ Completar página de Carrito
-5. ⬜ Completar página de Órdenes
-6. ⬜ Completar Panel de Admin básico
-7. ⬜ Probar flujo completo end-to-end
+3. ✅ Refactorizar sistema de DB (SQLite local + D1 producción)
+4. ✅ Corregir versiones de Next.js y React (estabilizar proyecto)
+5. ✅ Completar página de Sign In
+6. ✅ Completar Panel de Admin básico
+7. ⬜ **SIGUIENTE:** Completar página de Carrito
+8. ⬜ Completar página de Órdenes
+9. ⬜ Probar flujo completo end-to-end (login → agregar al carrito → crear orden → admin finaliza)
 
 ---
 
-**Última actualización:** ${new Date().toLocaleDateString('es-ES')}
+## 📝 Notas Técnicas Importantes
+
+### Configuración de Base de Datos
+- **Desarrollo:** SQLite local en `.wrangler/state/v3/d1/miniflare-D1DatabaseObject/60eb755a5e57cbc02def8d3735fd2d41a57117937eb255b5c776679a855aca2e.sqlite`
+- **Producción:** Cloudflare D1 (database_id: 8bed6fa2-5081-410d-807c-96f56fcf847c)
+- **Estrategia:** `getDb()` detecta `NODE_ENV` y cambia automáticamente entre SQLite y D1
+- **Runtime:** Cambiado de `edge` a `nodejs` en APIs que usan Google Drive/Nodemailer
+
+### Credenciales Admin Locales
+- **Email:** admin@example.com
+- **Password:** admin123
+
+### Comandos Útiles
+```bash
+# Desarrollo local (sin Wrangler)
+npm run dev
+
+# Generar nuevas migraciones
+npm run db:generate
+
+# Aplicar migraciones en local
+npm run db:migrate:local
+
+# Aplicar migraciones en producción
+npm run db:migrate:prod
+```
+
+---
+
+**Última actualización:** 2 de noviembre de 2025

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getR2 } from '@/lib/cloudflare';
-import { getImageFromR2 } from '@/lib/r2';
+import { getImageFromR2, getImageMetadataFromR2 } from '@/lib/r2-client';
 
-export const runtime = 'edge'; // Edge runtime para R2
+export const runtime = 'nodejs'; // Cambiado a nodejs para usar AWS SDK
 
 export async function GET(
   request: NextRequest,
@@ -15,19 +14,32 @@ export async function GET(
       return new NextResponse('Filename required', { status: 400 });
     }
 
-    const r2 = getR2();
-    const object = await getImageFromR2(r2, filename);
+    // Obtener metadata para ETag
+    const metadata = await getImageMetadataFromR2(filename);
+    
+    if (!metadata) {
+      return new NextResponse('Image not found', { status: 404 });
+    }
 
-    if (!object) {
+    // Verificar si el cliente tiene la versión actual (If-None-Match)
+    const clientETag = request.headers.get('if-none-match');
+    if (clientETag && clientETag === metadata.etag) {
+      return new NextResponse(null, { status: 304 }); // Not Modified
+    }
+
+    // Descargar imagen
+    const imageBuffer = await getImageFromR2(filename);
+
+    if (!imageBuffer) {
       return new NextResponse('Image not found', { status: 404 });
     }
 
     const headers = new Headers();
-    headers.set('Content-Type', object.httpMetadata?.contentType || 'image/jpeg');
-    headers.set('Cache-Control', 'public, max-age=31536000, immutable'); // Cache 1 año
-    headers.set('ETag', object.etag);
+    headers.set('Content-Type', metadata.contentType || 'image/jpeg');
+    headers.set('Cache-Control', 'public, max-age=86400, must-revalidate'); // 24h con revalidación
+    headers.set('ETag', metadata.etag);
 
-    return new NextResponse(object.body, {
+    return new NextResponse(new Uint8Array(imageBuffer), {
       headers,
     });
   } catch (error) {

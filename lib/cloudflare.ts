@@ -21,7 +21,7 @@ export function getDb() {
   if (isDev) {
     // Usar SQLite local en desarrollo
     if (!sqliteDb) {
-      const dbPath = path.join(process.cwd(), '.wrangler', 'state', 'v3', 'd1', 'miniflare-D1DatabaseObject', 'db.sqlite');
+      const dbPath = path.join(process.cwd(), '.wrangler', 'state', 'v3', 'd1', 'miniflare-D1DatabaseObject', '60eb755a5e57cbc02def8d3735fd2d41a57117937eb255b5c776679a855aca2e.sqlite');
       const sqlite = new Database(dbPath);
       sqliteDb = drizzleSQLite(sqlite, { schema });
     }
@@ -53,6 +53,15 @@ export function getD1() {
 
 // Helper para obtener R2 (usa producción incluso en desarrollo)
 export function getR2() {
+  const isDev = process.env.NODE_ENV === 'development';
+  
+  if (isDev) {
+    // En desarrollo local, R2 no está disponible sin configuración adicional
+    // Retornar null para que las APIs manejen el caso
+    console.warn('⚠️  R2 no disponible en desarrollo local. Las imágenes solo funcionarán en producción.');
+    return null;
+  }
+  
   const env = getCloudflareContext();
   if (!env?.PRODUCT_IMAGES) {
     throw new Error('R2 Bucket not available. Make sure CLOUDFLARE_* env vars are set.');

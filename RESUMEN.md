@@ -6,12 +6,16 @@
 
 - **Next.js 15** con App Router y TypeScript configurado
 - **TailwindCSS** para estilos
-- **Drizzle ORM** configurado para Cloudflare D1
+- **Drizzle ORM** configurado con adaptador dual (SQLite local / D1 producción)
 - **NextAuth.js v4** para autenticación
-- **Cloudflare R2** configurado para almacenamiento de imágenes
+- **Cloudflare R2** configurado para almacenamiento de imágenes (producción desde desarrollo)
 - **Google Drive API** integrado para sincronización
 
 ### ✅ Base de Datos (100%)
+
+**Estrategia Dual:**
+- **Desarrollo:** SQLite local (`better-sqlite3`) con archivo `./local.db`
+- **Producción:** Cloudflare D1 (SQLite en edge)
 
 Esquema completo con 6 tablas:
 - `users` - Usuarios (admin y clientes)
@@ -20,6 +24,18 @@ Esquema completo con 6 tablas:
 - `cart_items` - Items en los carritos
 - `orders` - Órdenes de compra
 - `sync_logs` - Logs de sincronización
+
+### ✅ Storage de Imágenes (100%)
+
+**Estrategia Simplificada:**
+- **Desarrollo:** Usa el mismo bucket R2 de producción mediante AWS SDK (S3-compatible)
+- **Producción:** R2 nativo mediante Cloudflare Workers binding
+
+**Beneficios:**
+- ✅ Pruebas con datos reales durante desarrollo
+- ✅ No necesitas mantener imágenes duplicadas localmente
+- ✅ Sincronización Drive → R2 funciona igual en dev y prod
+- ✅ Sin configuraciones complejas de Wrangler
 
 ### ✅ Backend APIs (100%)
 
@@ -64,6 +80,8 @@ Esquema completo con 6 tablas:
 
 ### ✅ Librerías y Utilidades (100%)
 
+- **DB Adapter** - Adaptador dual SQLite/D1 con detección automática de entorno
+- **R2 Adapter** - Acceso a R2 desde desarrollo usando AWS SDK
 - **CSV Parser** - Parseo de TiendaNube con soporte de variantes
 - **Google Drive helpers** - Listar, descargar, metadata
 - **R2 helpers** - Upload, download, delete, list
@@ -75,8 +93,8 @@ Esquema completo con 6 tablas:
 - Variables de entorno (`.env.example`, `.env.local`)
 - Wrangler config (`wrangler.toml`)
 - Drizzle config (`drizzle.config.ts`)
-- Scripts npm útiles
-- Script para crear admin
+- Scripts npm útiles (migraciones locales y producción)
+- Script para crear admin (funciona con SQLite local)
 
 ### ✅ Documentación (100%)
 
@@ -140,19 +158,35 @@ Total:                   90% █████████░
 ### Paso 1: Setup Inicial (30 min)
 
 ```bash
-# 1. Configurar Cloudflare
+# 1. Instalar dependencias
+npm install
+
+# 2. Configurar Cloudflare (solo para producción)
 wrangler d1 create catalogo-db
 wrangler r2 bucket create product-images
 
-# 2. Completar .env.local con las credenciales
+# 3. Obtener credenciales R2 para desarrollo
+# Ve a Cloudflare Dashboard → R2 → Manage R2 API Tokens
+# Crea token con permisos "Admin Read & Write"
 
-# 3. Generar migraciones
+# 4. Completar .env.local con las credenciales:
+#    - R2_ACCESS_KEY_ID
+#    - R2_SECRET_ACCESS_KEY
+#    - CLOUDFLARE_ACCOUNT_ID
+#    - R2_BUCKET_NAME=product-images
+#    - USE_PRODUCTION_R2=true
+#    - GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, etc.
+
+# 5. Generar y aplicar migraciones locales
 npm run db:generate
 npm run db:migrate:local
 
-# 4. Crear admin
+# 6. Crear admin (se crea en SQLite local)
 npm run create-admin
-# Ejecutar el comando que te muestra
+# Ejecutar el comando SQL que te muestra
+
+# 7. Iniciar servidor de desarrollo
+npm run dev
 ```
 
 ### Paso 2: Completar Frontend (4 horas)
@@ -164,20 +198,21 @@ npm run create-admin
 
 ### Paso 3: Testing (2 horas)
 
-1. Iniciar con `npm run wrangler:dev`
+1. Iniciar con `npm run dev` (usa SQLite local + R2 producción)
 2. Login como admin
 3. Upload CSV de prueba
-4. Sincronizar imágenes
+4. Sincronizar imágenes (Drive → R2)
 5. Crear orden como cliente
 6. Gestionar orden como admin
 
 ### Paso 4: Deploy (1 hora)
 
-1. Build del proyecto
-2. Deploy a Cloudflare Pages
-3. Configurar bindings y variables
-4. Migrar DB en producción
-5. Crear admin en producción
+1. Build del proyecto: `npm run build`
+2. Deploy a Cloudflare Pages: `wrangler pages deploy .next`
+3. Configurar bindings (D1 y R2) en Pages dashboard
+4. Configurar variables de entorno en Pages
+5. Migrar DB en producción: `npm run db:migrate:prod`
+6. Crear admin en producción
 
 ---
 
@@ -203,9 +238,8 @@ proyecto-catalogo/
 ├── components/
 │   └── Navbar.tsx
 ├── lib/
-│   ├── db/
-│   │   ├── schema.ts
-│   │   └── index.ts
+│   ├── db.ts                    ← 🆕 Adaptador dual SQLite/D1
+│   ├── schema.ts
 │   ├── auth.ts
 │   ├── cloudflare.ts
 │   ├── csv-parser.ts
@@ -215,7 +249,8 @@ proyecto-catalogo/
 ├── types/
 │   └── next-auth.d.ts
 ├── scripts/
-│   └── create-admin.js
+│   ├── create-admin.js
+│   └── migrate-local.ts         ← 🆕 Migraciones SQLite local
 ├── .env.example
 ├── .env.local
 ├── wrangler.toml
@@ -223,17 +258,59 @@ proyecto-catalogo/
 ├── package.json
 ├── tsconfig.json
 ├── .gitignore
+├── local.db                     ← 🆕 SQLite local (git ignored)
 ├── README.md
 ├── QUICKSTART.md
 ├── TODO.md
 └── RESUMEN.md
 ```
 
-**Total de archivos creados: ~30**
+**Total de archivos creados: ~32**
 
 ---
 
 ## 💡 Decisiones de Arquitectura
+
+### ¿Por qué SQLite local + D1 producción?
+
+**Problema anterior:** Wrangler dev era complicado y lento para Next.js
+
+**Solución:**
+- **Desarrollo:** SQLite local con `better-sqlite3` → súper rápido, sin configuraciones
+- **Producción:** D1 (SQLite en edge) → mismo esquema, migración directa
+- **Adaptador dual:** Un solo código que funciona en ambos entornos
+
+**Beneficios:**
+- ✅ Desarrollo instantáneo con `npm run dev`
+- ✅ Sin emuladores complejos
+- ✅ Mismo esquema SQL en ambos entornos
+- ✅ Migraciones fáciles (Drizzle funciona igual)
+- ✅ Testing rápido sin consumir cuota de producción
+
+### ¿Por qué R2 de producción desde desarrollo?
+
+**Problema anterior:** Mock filesystem local no refleja comportamiento real
+
+**Solución:** Usar el mismo bucket R2 de producción desde desarrollo mediante AWS SDK
+
+**Beneficios:**
+- ✅ Pruebas con datos reales
+- ✅ Sincronización Drive → R2 funciona igual en dev y prod
+- ✅ No necesitas mantener dos copias de imágenes
+- ✅ Configuración simple (solo credenciales en `.env.local`)
+- ✅ Sin riesgo (el bucket está vacío al inicio)
+
+**Cómo funciona:**
+```javascript
+// En desarrollo: usa AWS SDK (S3-compatible)
+const s3 = new S3Client({
+  endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: { accessKeyId, secretAccessKey }
+});
+
+// En producción: usa binding nativo de Cloudflare
+const r2 = env.PRODUCT_IMAGES;
+```
 
 ### ¿Por qué Cloudflare?
 
@@ -253,6 +330,7 @@ proyecto-catalogo/
 
 - **Type-safe:** Tipado fuerte en queries
 - **D1 Support:** Compatible con Cloudflare
+- **SQLite Support:** Compatible con better-sqlite3
 - **Migraciones:** Sistema de migraciones robusto
 - **Lightweight:** Más ligero que Prisma
 
@@ -272,27 +350,33 @@ proyecto-catalogo/
 
 ## 🎨 Características Únicas del Proyecto
 
-1. **Sincronización Incremental de Imágenes**
+1. **Desarrollo Local Simplificado**
+   - SQLite local para DB (súper rápido)
+   - R2 de producción para storage (datos reales)
+   - Sin emuladores ni Wrangler complejo
+   - `npm run dev` y listo
+
+2. **Sincronización Incremental de Imágenes**
    - Compara MD5 entre Drive y R2
    - Solo transfiere lo que cambió
    - Limpia imágenes huérfanas automáticamente
 
-2. **Soporte de Variantes**
+3. **Soporte de Variantes**
    - Un producto puede tener múltiples variantes
    - Precio y stock independiente por variante
    - Agrupación automática desde CSV
 
-3. **Carritos Persistentes**
+4. **Carritos Persistentes**
    - Se guardan en DB, no localStorage
    - Persisten entre sesiones
    - Sincronización automática con cambios de productos
 
-4. **Órdenes Inmutables**
+5. **Órdenes Inmutables**
    - Órdenes finalizadas no se pueden modificar
    - Snapshot completo del carrito al crear orden
    - Historial completo de cambios
 
-5. **Parser de CSV Robusto**
+6. **Parser de CSV Robusto**
    - Soporte para encoding ANSI
    - Manejo de precios con coma decimal
    - Validación exhaustiva con reporte de errores
@@ -303,7 +387,9 @@ proyecto-catalogo/
 
 ### Desarrollo Local: $0
 
-Todo funciona localmente con Wrangler.
+Todo funciona localmente:
+- SQLite: archivo local gratuito
+- R2: usa bucket de producción (dentro de cuota gratuita)
 
 ### Producción (10 usuarios/día, 200 productos): $0/mes
 
@@ -338,6 +424,12 @@ vs. **Custom PHP:**
 - ✅ Edge (ultra rápido)
 - ✅ Escalable sin esfuerzo
 
+vs. **Soluciones con Wrangler dev:**
+- ✅ Setup más simple
+- ✅ Desarrollo más rápido
+- ✅ Menos configuraciones
+- ✅ Menos errores de emulación
+
 ---
 
 ## 📞 Soporte y Ayuda
@@ -352,8 +444,10 @@ vs. **Custom PHP:**
 
 - [Next.js Docs](https://nextjs.org/docs)
 - [Cloudflare D1 Docs](https://developers.cloudflare.com/d1/)
+- [Cloudflare R2 Docs](https://developers.cloudflare.com/r2/)
 - [Drizzle ORM Docs](https://orm.drizzle.team/)
 - [NextAuth Docs](https://next-auth.js.org/)
+- [better-sqlite3 Docs](https://github.com/WiseLibs/better-sqlite3)
 
 ---
 
@@ -362,21 +456,24 @@ vs. **Custom PHP:**
 Con este proyecto, ahora sabes cómo:
 
 1. ✅ Crear apps full-stack con Next.js 15
-2. ✅ Usar Cloudflare D1 (SQLite edge)
-3. ✅ Usar Cloudflare R2 (object storage)
-4. ✅ Integrar Google Drive API
-5. ✅ Implementar autenticación con NextAuth
-6. ✅ Usar Drizzle ORM con TypeScript
-7. ✅ Parsear y validar CSVs
-8. ✅ Crear sistemas de carrito persistentes
-9. ✅ Manejar órdenes de compra
-10. ✅ Deploy serverless en Cloudflare Pages
+2. ✅ Usar adaptadores duales (SQLite local / D1 producción)
+3. ✅ Acceder a Cloudflare R2 desde desarrollo local
+4. ✅ Usar Cloudflare D1 (SQLite edge)
+5. ✅ Integrar Google Drive API
+6. ✅ Implementar autenticación con NextAuth
+7. ✅ Usar Drizzle ORM con TypeScript
+8. ✅ Parsear y validar CSVs
+9. ✅ Crear sistemas de carrito persistentes
+10. ✅ Manejar órdenes de compra
+11. ✅ Deploy serverless en Cloudflare Pages
 
 ---
 
 ## 🚀 ¡Estás listo para continuar!
 
 El 90% del trabajo pesado está hecho. Solo faltan las páginas de UI y algunos detalles.
+
+**Ventaja adicional:** Con SQLite local y R2 de producción, el desarrollo es **mucho más rápido y simple** que con Wrangler.
 
 **Tiempo estimado para completar:** 6-8 horas más
 

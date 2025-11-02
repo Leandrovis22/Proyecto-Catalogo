@@ -65,8 +65,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as { productId: number; quantity: number };
     const { productId, quantity } = body;
 
+    console.log('Cart POST request:', { productId, quantity, userId: session.user.id });
+
     if (!productId || !quantity || quantity < 1) {
-      return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid input', details: { productId, quantity } }, { status: 400 });
     }
 
     const db = getDb();

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getDb, getR2 } from '@/lib/cloudflare';
+import { getDb } from '@/lib/cloudflare';
 import { products, syncLogs } from '@/lib/db/schema';
 import {
   listDriveImages,
@@ -12,7 +12,7 @@ import {
   listImagesInR2,
   uploadImageToR2,
   deleteImageFromR2,
-} from '@/lib/r2';
+} from '@/lib/r2-client';
 import { eq, isNull } from 'drizzle-orm';
 
 export const runtime = 'nodejs'; // Necesario para Google Drive API
@@ -42,7 +42,6 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getDb();
-    const r2 = getR2();
 
     const result: SyncResult = {
       uploaded: 0,
@@ -56,9 +55,9 @@ export async function POST(request: NextRequest) {
     console.log(`Found ${driveImages.length} images in Google Drive`);
 
     // 2. Listar imágenes en R2
-    const r2Objects = await listImagesInR2(r2);
+    const r2Objects = await listImagesInR2();
     const r2Images = new Map(
-      r2Objects.objects.map((obj: { key: string; etag: string }) => [obj.key, obj.etag])
+      r2Objects.map((obj) => [obj.key, obj.etag])
     );
 
     // 3. Crear un mapa de slugs de Drive
@@ -75,28 +74,33 @@ export async function POST(request: NextRequest) {
         // Verificar si la imagen cambió comparando MD5
         const r2Etag = r2Images.get(r2Key);
         const driveHash = driveImage.md5Checksum;
+        const imageExists = r2Etag && r2Etag === `"${driveHash}"`;
 
-        if (r2Etag && r2Etag === `"${driveHash}"`) {
-          // Imagen no cambió, skip
+        if (!imageExists) {
+          // Descargar de Drive
+          console.log(`Downloading ${driveImage.name} from Drive...`);
+          const imageData = await downloadDriveImage(driveImage.id);
+
+          // Subir a R2
+          console.log(`Uploading ${r2Key} to R2...`);
+          await uploadImageToR2(r2Key, imageData, 'image/jpeg');
+          result.uploaded++;
+        } else {
+          // Imagen ya existe y no cambió
           result.skipped++;
-          continue;
         }
 
-        // Descargar de Drive
-        console.log(`Downloading ${driveImage.name} from Drive...`);
-        const imageData = await downloadDriveImage(driveImage.id);
-
-        // Subir a R2
-        console.log(`Uploading ${r2Key} to R2...`);
-        await uploadImageToR2(r2, r2Key, imageData, 'image/jpeg');
-
-        // Actualizar URL en productos con este slug
-        await db
+        // SIEMPRE actualizar URL en productos (incluso si la imagen ya existía)
+        const timestamp = Date.now();
+        const newUrl = `/api/images/${r2Key}?v=${timestamp}`;
+        
+        console.log(`Updating products with slug "${slug}" to imageUrl: ${newUrl}`);
+        const updateResult = await db
           .update(products)
-          .set({ imageUrl: `/api/images/${r2Key}` })
+          .set({ imageUrl: newUrl })
           .where(eq(products.slug, slug));
-
-        result.uploaded++;
+        
+        console.log('Update result:', updateResult);
 
         // Log exitoso
         await db.insert(syncLogs).values({
@@ -125,7 +129,7 @@ export async function POST(request: NextRequest) {
       if (!driveImageMap.has(slug)) {
         try {
           console.log(`Deleting ${r2Key} from R2 (not in Drive)...`);
-          await deleteImageFromR2(r2, r2Key as string);
+          await deleteImageFromR2(r2Key as string);
 
           // Limpiar imageUrl en productos con este slug
           await db
